@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PNG Fire Watch</title>
+<meta name="description" content="Daily satellite fire alerts across Papua New Guinea by province, district, protected area and Key Biodiversity Area, compared with every year since 2012.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: national fire console — map left, briefing panel right; tabs for areas table, downloads, method */
+:root{
+  --bg:#f5f3ef; --panel:#ffffff; --ink:#221d1a; --muted:#6a625b; --line:#e0dbd3; --soft:#efebe5;
+  --band:#2b2118; --band-ink:#f4e9df; --ember:#c2410c; --ok:#2f7d4a; --warn:#b7791f; --bad:#b42318; --map-bg:#dcdcd6;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif; --body:"Barlow","Segoe UI",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141110;--panel:#1d1916;--ink:#ede6df;--muted:#a69b90;--line:#352e28;--soft:#26211d;--band:#1a1410;--band-ink:#f0e2d4;--ember:#f07a3e;--ok:#5fbf7f;--warn:#e0a648;--bad:#f0645a;--map-bg:#23201d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141110;--panel:#1d1916;--ink:#ede6df;--muted:#a69b90;--line:#352e28;--soft:#26211d;--band:#1a1410;--band-ink:#f0e2d4;--ember:#f07a3e;--ok:#5fbf7f;--warn:#e0a648;--bad:#f0645a;--map-bg:#23201d;color-scheme:dark}
+*{box-sizing:border-box} html,body{margin:0} img{max-width:100%} [hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1560px;margin-inline:auto}
+header.top{background:var(--band);color:var(--band-ink)}
+header.top .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:flex-end;justify-content:space-between;padding-block:14px 0}
+.brand h1{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.01em;margin:0;line-height:1.05}
+.brand p{margin:2px 0 10px;font-size:13px;opacity:.85;max-width:80ch}
+nav.tabs{display:flex;gap:2px;flex-wrap:wrap}
+nav.tabs button{font:600 14px var(--body);color:var(--band-ink);background:transparent;border:0;padding:10px 14px;border-radius:6px 6px 0 0;cursor:pointer;opacity:.8}
+nav.tabs button[aria-selected="true"]{background:var(--bg);color:var(--ink);opacity:1}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+main{padding-block:14px 32px}
+.grid-map{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:14px;align-items:start}
+@media (max-width:1000px){.grid-map{grid-template-columns:minmax(0,1fr)}}
+.controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:10px}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{font:500 13px var(--body);border:0;background:transparent;color:var(--ink);padding:6px 10px;cursor:pointer;border-right:1px solid var(--line);display:inline-flex;align-items:center;gap:6px}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.35)}
+.lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.toggle{display:inline-flex;gap:6px;align-items:center;font-size:13px;cursor:pointer}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--map-bg)}
+#map{height:min(74vh,780px);min-height:440px;background:var(--map-bg)}
+.layers,.legend{position:absolute;z-index:500;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.layers{top:10px;right:10px;max-width:240px;max-height:calc(100% - 20px);overflow:auto}
+.layers label{display:flex;gap:6px;align-items:center;cursor:pointer;margin:2px 0}
+.layers .h,.legend summary,.layers summary{font-weight:600;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:4px;cursor:pointer}
+.legend{left:10px;bottom:10px;max-width:270px}
+.legend-body{display:flex;flex-direction:column;gap:3px;margin-top:4px;font-size:12px}
+.legend .row{display:flex;gap:6px;align-items:center}
+.sw{width:14px;height:10px;display:inline-block;border-radius:2px;border:1px solid rgba(0,0,0,.25)}
+.zoombar{position:absolute;left:54px;top:10px;z-index:500;display:flex;gap:4px;flex-wrap:wrap;max-width:calc(100% - 320px)}
+.zoombar button,.zoombar select{font:600 12px var(--body);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.15)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel h2{font-family:var(--display);font-weight:700;font-size:26px;line-height:1.05;margin:0}
+.panel h3{font-size:14px;font-weight:600;margin:0}
+.meta{font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.chip.bad{color:var(--bad)} .chip.warn{color:var(--warn)} .chip.ok{color:var(--ok)} .chip.mut{color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.kpi{background:var(--soft);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
+.kpi .k{font-size:12px;color:var(--muted)} .kpi .n{font-size:12px;color:var(--muted)}
+.kpi .v{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+.chart svg{display:block;width:100%;height:auto}
+.btnrow{display:flex;flex-wrap:wrap;gap:6px}
+.btn{font:600 13px var(--body);background:var(--ink);color:var(--panel);border:1px solid var(--ink);border-radius:7px;padding:7px 11px;cursor:pointer;text-decoration:none;display:inline-flex;gap:6px;align-items:center}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn[disabled]{opacity:.5;cursor:progress}
+.list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.list button{all:unset;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:13.5px;font-variant-numeric:tabular-nums}
+.list button:hover{background:var(--soft)} .list .r{text-align:right} .list .m{color:var(--muted);text-align:right;min-width:48px}
+.list button:focus-visible{outline:2px solid var(--ember)}
+.hbar{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12.5px}
+.hbar i{display:block;height:9px;border-radius:5px;background:var(--ember)}
+.note{font-size:12.5px;color:var(--muted)}
+.back{align-self:flex-start;font:600 12px var(--body);background:transparent;border:0;color:var(--muted);cursor:pointer;padding:0}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:8px;font-size:13px;z-index:2000}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.tbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.tbar h2{font-family:var(--display);font-size:24px;margin:0}
+input[type=search],select{font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
+.tbox{overflow:auto;max-height:72vh}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+th{position:sticky;top:0;background:var(--panel);text-align:left;font-weight:600;border-bottom:2px solid var(--line);padding:7px 8px;white-space:nowrap}
+th button{all:unset;cursor:pointer}
+td{padding:7px 8px;border-bottom:1px solid var(--line)}
+td.n,th.n{text-align:right}
+tbody tr{cursor:pointer} tbody tr:hover td{background:var(--soft)}
+.bar{display:inline-block;height:8px;border-radius:4px;background:var(--ember);vertical-align:middle;margin-right:6px}
+@media (max-width:760px){.hn{display:none}.zoombar{max-width:calc(100% - 70px)}}
+.dlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px}
+.dlgroup h3{font-family:var(--display);font-size:20px;margin:0 0 4px}
+.dlgroup p{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.dlist{display:flex;flex-direction:column;border-top:1px solid var(--line);max-height:420px;overflow:auto}
+.ditem{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.about{max-width:80ch}
+.about h2{font-family:var(--display);font-size:24px;margin:18px 0 6px}
+.about p,.about li{font-size:14.5px}
+.about table{font-size:13px;margin:6px 0 12px}
+footer.site{border-top:1px solid var(--line);padding-block:14px 28px;font-size:12.5px;color:var(--muted)}
+.leaflet-container{font-family:var(--body)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1 id="app-title">PNG Fire Watch</h1>
+      <p><span id="app-sub">Satellite fire alerts across Papua New Guinea</span> · VIIRS alerts to <span id="hdr-date">…</span> · updated <span id="hdr-upd">…</span></p>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="t-map" aria-selected="true" data-view="map">Map</button>
+      <button role="tab" id="t-areas" aria-selected="false" data-view="areas">Areas</button>
+      <button role="tab" id="t-downloads" aria-selected="false" data-view="downloads">Downloads</button>
+      <button role="tab" id="t-about" aria-selected="false" data-view="about">Method</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="view" id="view-map">
+    <div class="controls">
+      <span class="lbl">Show</span>
+      <div class="seg" id="f-prog"></div>
+      <span class="lbl">Month</span>
+      <div class="seg" id="f-month"></div>
+      <label class="toggle"><input type="checkbox" id="f-nl"> Exclude low-confidence alerts</label>
+      <span class="meta" id="count-line">Loading fire alerts…</span>
+    </div>
+    <div class="grid-map">
+      <div class="mapbox">
+        <div id="map" role="region" aria-label="Fire alert map"></div>
+        <div class="zoombar">
+          <button data-z="all">Whole country</button>
+          <select id="z-prov" aria-label="Zoom to province"><option value="">Zoom to province…</option></select>
+        </div>
+        <details class="layers" id="layers" open>
+          <summary>Layers</summary>
+          <label><input type="checkbox" id="l-fires" checked> Fire alerts</label>
+          <label><input type="checkbox" id="l-dist"> Districts by fire density</label>
+          <label><input type="checkbox" id="l-pa" checked> Protected areas (WDPA)</label>
+          <label><input type="checkbox" id="l-kba"> Key Biodiversity Areas</label>
+          <label><input type="checkbox" id="l-ifl"> Intact forest landscapes</label>
+          <label><input type="checkbox" id="l-prim"> Primary forest (2001)</label>
+          <label><input type="checkbox" id="l-peat"> Peatlands</label>
+          <label><input type="checkbox" id="l-mang"> Mangroves (2020)</label>
+          <span class="h">Background</span>
+          <label><input type="radio" name="bg" id="bg-img" checked> Satellite imagery</label>
+          <label><input type="radio" name="bg" id="bg-osm"> Street map</label>
+          <label><input type="radio" name="bg" id="bg-none"> None</label>
+        </details>
+        <details class="legend" id="legendbox" open><summary>Legend</summary><div id="legend" class="legend-body"></div></details>
+      </div>
+      <aside class="panel" id="panel" aria-live="polite"><h2>Loading…</h2></aside>
+    </div>
+  </section>
+
+  <section class="view" id="view-areas" hidden>
+    <div class="card">
+      <div class="tbar">
+        <div><h2>All areas</h2><div class="meta">Fire alerts in <span class="lab">this season</span> against the same period in earlier years. Click a row to open it on the map.</div></div>
+        <div class="btnrow">
+          <select id="a-kind" aria-label="Area type"><option value="prov">Provinces</option><option value="dist">Districts</option><option value="pa">Protected areas</option><option value="kba">Key Biodiversity Areas</option></select>
+          <input type="search" id="a-q" placeholder="Search" aria-label="Search areas">
+        </div>
+      </div>
+      <div class="tbox">
+        <table id="a-table"><thead><tr>
+          <th><button data-k="name">Name</button></th>
+          <th class="hn"><button data-k="prov">Province</button></th>
+          <th class="n hn"><button data-k="area">Area</button></th>
+          <th class="n"><button data-k="now">Fires now</button></th>
+          <th class="n hn"><button data-k="mean">Average</button></th>
+          <th class="n"><button data-k="ratio">vs avg</button></th>
+          <th class="n hn"><button data-k="rank">Rank</button></th>
+          <th class="n hn"><button data-k="ring">Ring</button></th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-downloads" hidden><div class="dlgrid" id="dlgrid"></div></section>
+
+  <section class="view about" id="view-about" hidden>
+    <h2>What the map shows</h2>
+    <p>Each dot is a NASA VIIRS 375 m active-fire alert in the current fire season (<span class="lab"></span>), coloured by month. One fire can produce several alerts over several days, and smoke or cloud can hide fires, so alert counts show fire activity, not burned area.</p>
+    <h2>Comparing years</h2>
+    <p>Every province, district, protected area and Key Biodiversity Area is compared with the same calendar period in every year since <span class="fy"></span>. "Rank" is the position of this season among all those years (1 = highest).</p>
+    <p><strong>Satellites.</strong> The Global Forest Watch VIIRS dataset is the VNP14IMGT product from the Suomi NPP satellite only. Alerts from NOAA-20 and NOAA-21, launched in 2017 and 2022, are not included, so the record since 2012 comes from one sensor and adding satellites does not inflate recent years.</p>
+    <p><strong>Confidence.</strong> Each alert has a confidence of low, nominal or high. Use "Exclude low-confidence alerts" to drop low-confidence alerts everywhere on the dashboard. In tests for Western Province, excluding them changed totals by 7–14% and barely changed comparisons between years, so all alerts are shown by default, as on Global Forest Watch.</p>
+    <h2>Layers and sources</h2>
+    <table>
+      <thead><tr><th>Layer</th><th>Source</th><th>Licence or terms</th></tr></thead>
+      <tbody>
+        <tr><td>Fire alerts</td><td>NASA FIRMS VIIRS (S-NPP), via the GFW Data API</td><td>NASA open data policy</td></tr>
+        <tr><td>Provinces and districts</td><td>OCHA COD-AB, PNG National Statistical Office</td><td>CC BY-IGO</td></tr>
+        <tr><td>Protected areas</td><td>World Database on Protected Areas (UNEP-WCMC &amp; IUCN), GFW tiles</td><td>WDPA terms of use; boundaries are shown, not redistributed</td></tr>
+        <tr><td>Key Biodiversity Areas</td><td>World Database of KBAs (BirdLife International), GFW tiles</td><td>Non-commercial; boundaries are shown, not redistributed</td></tr>
+        <tr><td>Intact forest landscapes</td><td>Potapov et al. / intactforests.org, GFW tiles</td><td>CC BY 4.0</td></tr>
+        <tr><td>Primary forest 2001</td><td>Turubanova et al. (UMD), GFW tiles</td><td>CC BY 4.0</td></tr>
+        <tr><td>Peatlands, mangroves</td><td>GFW peatlands composite; Global Mangrove Watch 2020</td><td>See globalforestwatch.org</td></tr>
+        <tr><td>Satellite imagery, street map</td><td>Esri World Imagery; OpenStreetMap</td><td>Attribution shown on maps</td></tr>
+      </tbody>
+    </table>
+    <p>Each alert also carries GFW's flags for tree cover, primary forest, intact forest, KBA, protected area, peatland, mangrove, managed forest and mining concessions, and LandMark indigenous and community lands. These give the "Where the alerts fall" breakdown.</p>
+    <h2>How it updates</h2>
+    <p>A scheduled job runs twice a day. It checks Global Forest Watch for new alerts and, when there are any, rebuilds every number, map and PDF report. Last update: <span id="upd2"></span>.</p>
+    <h2>Limitations</h2>
+    <ul>
+      <li>A fire alert is a hot 375 m pixel seen by the satellite. One fire can produce many alerts, and small or brief fires are missed.</li>
+      <li>Protected area and KBA boundaries vary in accuracy, and some areas are missing from the global databases or out of date.</li>
+      <li>Counts inside a protected area or KBA use its official boundary. Ring counts include alerts within the set distance outside it, measured in its own UTM zone.</li>
+      <li>District and province names and boundaries are the 2019 OCHA set (22 provinces, 87 districts).</li>
+    </ul>
+  </section>
+</main>
+<footer class="site"><div class="wrap" id="footer">PNG Fire Watch · Data: NASA VIIRS via Global Forest Watch; OCHA COD-AB; WDPA; BirdLife KBAs; UMD; Global Mangrove Watch. Updated automatically.</div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+const nf=new Intl.NumberFormat('en'); const f0=v=>v==null||isNaN(v)?'–':nf.format(Math.round(v)); const f1=v=>v==null||isNaN(v)?'–':(+v).toLocaleString('en',{maximumFractionDigits:1,minimumFractionDigits:1});
+const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const RAMP=['#ffe08a','#ffa53d','#f0532a','#b5002a','#7a0026','#4d0019','#2e000f'];
+const DAMS=gs=>'https://my.gfw-mapbuilder.org/v1.latest/index.html?appid=c8e4162ef1dd4891aad9b560ac88e55b&report=true&geostoreID='+gs+'&acLayer=user_features&acSublayer=undefined&objectid=undefined&b=webmap&l=en&d=5&ty=2001%2C2025&layers=&o=&gladconfirmed=false&gs='+SEASON.start+'&ge='+SEASON.end;
+const TILE='https://tiles.globalforestwatch.org/';
+let ST, SEASON, CFG, CUR, MKEYS=[], MCOL={}, MONTHS={}, MSHORT={}, FIRES=[], LOWBIT=1024;
+const state={prog:'all',month:'all',nl:false,sel:null};
+const ix=()=>state.nl?1:0;
+let map, fireLayer, provLayer, distLayer, paLayer, kbaLayer, iflLayer, primLayer, peatLayer, mangLayer, bgImg, bgOsm, BY={};
+
+function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),2600);}
+function el(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k==='text')e.textContent=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!=null)e.setAttribute(k,v);}kids.flat().forEach(c=>c!=null&&e.append(c.nodeType?c:document.createTextNode(c)));return e;}
+const short=n=>String(n||'').replace(/ Province$/,'').replace(/ District$/,'');
+
+/* ---------- downloads ---------- */
+function saveBlob(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);}
+async function saveZip(items,zipname,btn){
+  if(!window.JSZip){toast('Zip tool did not load');return;}
+  btn.disabled=true;const old=btn.textContent;
+  try{const z=new JSZip();let i=0;for(const it of items){btn.textContent='Packing '+(++i)+'/'+items.length;const r=await fetch(it.url);if(!r.ok)throw new Error(it.url);z.file(it.name,await r.blob());}
+    btn.textContent='Compressing…';saveBlob(await z.generateAsync({type:'blob'}),zipname);toast('Saved '+zipname);}
+  catch(e){toast('Could not build '+zipname);} finally{btn.disabled=false;btn.textContent=old;}
+}
+const dlBtn=(label,url,filename,ghost)=>el('a',{class:'btn'+(ghost?' ghost':''),href:url,download:filename},label);
+
+/* ---------- charts ---------- */
+function bars(items,opt){
+  const W=360,H=150,l=36,r=6,t=16,b=22,iw=W-l-r,ih=H-t-b;
+  const max=Math.max(1,...items.map(d=>d.v),opt.ref||0);
+  const p=Math.pow(10,Math.floor(Math.log10(max)));const step=[1,2,2.5,5,10].map(x=>x*p).find(x=>x*4>=max)||max;const top=Math.ceil(max/step)*step;
+  const y=v=>t+ih-ih*v/top, bw=iw/Math.max(1,items.length);
+  const ns='http://www.w3.org/2000/svg';const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',opt.title);
+  const mk=(n,a,txt)=>{const e=document.createElementNS(ns,n);for(const k in a)e.setAttribute(k,a[k]);if(txt!=null)e.textContent=txt;svg.appendChild(e);return e;};
+  for(let v=0;v<=top+1e-9;v+=step){mk('line',{x1:l,x2:W-r,y1:y(v),y2:y(v),stroke:'var(--line)','stroke-width':1});mk('text',{x:l-4,y:y(v)+3.5,'text-anchor':'end','font-size':9.5,fill:'var(--muted)'},v>=1000?(+(v/1000).toFixed(1))+'k':String(+v.toFixed(2)));}
+  const every=Math.ceil(items.length/12);
+  items.forEach((d,i)=>{const x=l+i*bw+bw*0.15,w=bw*0.7;const rr=mk('rect',{x,y:y(d.v),width:w,height:Math.max(0,t+ih-y(d.v)),rx:2,fill:d.hl?'var(--ember)':'var(--muted)','fill-opacity':d.hl?1:0.45});
+    const ti=document.createElementNS(ns,'title');ti.textContent=d.tip||(d.label+': '+d.v);rr.appendChild(ti);
+    if(i%every===0||d.hl)mk('text',{x:x+w/2,y:H-6,'text-anchor':'middle','font-size':9.5,fill:'var(--muted)'},d.label);
+    if(d.hl&&d.v>0)mk('text',{x:x+w/2,y:y(d.v)-3,'text-anchor':'middle','font-size':10,'font-weight':600,fill:'var(--ink)'},f0(d.v));});
+  if(opt.ref){mk('line',{x1:l,x2:W-r,y1:y(opt.ref),y2:y(opt.ref),stroke:'var(--ink)','stroke-dasharray':'4 3','stroke-width':1});mk('text',{x:l+4,y:y(opt.ref)-3,'font-size':9.5,fill:'var(--ink)'},opt.refLabel||'average');}
+  return el('div',{class:'chart'},el('h3',{text:opt.title}),svg);
+}
+const yearItems=u=>Object.keys(u.years).sort().map(k=>({label:"'"+k.slice(2),v:u.years[k][ix()],hl:k===CUR,tip:k+': '+f0(u.years[k][ix()])+' alerts'}));
+const monItems=u=>{const it=MKEYS.map(k=>({label:MSHORT[k],v:(u.monthly[k]||[0,0])[ix()],tip:MONTHS[k]+': '+f0((u.monthly[k]||[0,0])[ix()])+' alerts'}));const mx=Math.max(...it.map(d=>d.v));it.forEach(d=>d.hl=d.v===mx&&mx>0);return it;};
+
+/* ---------- helpers ---------- */
+const nowv=u=>u.now[ix()], meanv=u=>u.mean[ix()], ratiov=u=>u.ratio[ix()], rankv=u=>u.rank[ix()];
+const rtxt=u=>ratiov(u)==null?(nowv(u)?'new':'–'):ratiov(u).toFixed(1)+'×';
+function status(u){if(!nowv(u))return['No fire alerts this season','mut'];const r=ratiov(u);if(r==null||r>=3)return['Fire well above normal','bad'];if(r>=1.5)return['Fire above normal','warn'];return['Fire near or below normal','ok'];}
+const progProv=()=>{if(state.prog==='all')return null;const p=(CFG.programmes||[]).find(x=>x.id===state.prog);return p?new Set(p.provinces):null;};
+const inProg=pid=>{const s=progProv();return !s||s.has(pid);};
+function kpi(k,v,n){return el('div',{class:'kpi'},el('span',{class:'k',text:k}),el('span',{class:'v',text:v}),n?el('span',{class:'n',text:n}):null);}
+function setHash(id){try{history.replaceState(null,'',id?'#'+id:location.pathname+location.search);}catch(e){}}
+function flagBars(u){const tot=Math.max(1,nowv(u));const fl=CFG.flags.map(f=>({label:f.label,v:(u.flags[f.key]||[0,0])[ix()]})).filter(f=>f.v>0).sort((a,b)=>b.v-a.v);
+  if(!fl.length)return null;const mx=Math.max(...fl.map(f=>f.v));
+  return el('div',{},el('h3',{text:'Where the alerts fall'}),el('div',{style:'display:flex;flex-direction:column;gap:4px;margin-top:6px'},fl.map(f=>el('div',{class:'hbar'},el('span',{text:f.label}),el('i',{style:'width:'+Math.max(2,Math.round(100*f.v/mx))+'%'}),el('span',{class:'meta',text:f0(f.v)+' · '+Math.round(100*f.v/tot)+'%'})))),
+    el('p',{class:'note',text:'Categories overlap: an alert can be in a KBA, a protected area and primary forest at once.'}));}
+
+/* ---------- panel ---------- */
+const panel=$('#panel');
+function rowList(items,onpick){return el('div',{class:'list'},items.map(u=>el('button',{onclick:()=>onpick(u)},el('span',{text:short(u.name)}),el('span',{class:'r',text:f0(nowv(u))}),el('span',{class:'m',text:rtxt(u)}))));}
+function renderOverview(){
+  state.sel=null;setHash('');highlight();
+  const s=progProv();const N=ST.national;
+  const provs=ST.provinces.filter(p=>inProg(p.id)).sort((a,b)=>nowv(b)-nowv(a));
+  const unit=s?{name:'Selected provinces',years:sumYears(provs),monthly:sumMonthly(provs),now:[0,1].map(i=>provs.reduce((a,p)=>a+p.now[i],0))}:N;
+  if(s){unit.mean=[0,1].map(i=>{const ks=Object.keys(unit.years).filter(k=>k!==CUR);return ks.reduce((a,k)=>a+unit.years[k][i],0)/ks.length;});unit.ratio=[0,1].map(i=>unit.mean[i]?unit.now[i]/unit.mean[i]:null);}
+  const areas=ST.areas.filter(a=>inProg(a.province_id));
+  const above=areas.filter(a=>nowv(a)>meanv(a)&&nowv(a)>0).length, rec=areas.filter(a=>rankv(a)===1&&nowv(a)>0).length;
+  panel.replaceChildren(
+    el('h2',{text:s?((CFG.programmes.find(p=>p.id===state.prog)||{}).description||'Selected provinces'):'Papua New Guinea'}),
+    el('p',{class:'meta',text:`${f0(nowv(unit))} fire alerts in ${SEASON.label}${ratiovSafe(unit)}. ${above} of ${areas.length} protected areas and KBAs are above their average for this period, and ${rec} are at their highest since ${SEASON.first_year}.`}),
+    el('div',{class:'kpis'},kpi('Fire alerts, '+SEASON.label,f0(nowv(unit)),'average '+f0(meanv(unit))+' in earlier years'),kpi('Versus average',ratiov(unit)==null?'–':ratiov(unit).toFixed(1)+'×','2015: '+f0((unit.years['2015']||[0,0])[ix()]))),
+    bars(yearItems(unit),{title:'Fire alerts in the same period of each year',ref:meanv(unit),refLabel:'average of earlier years'}),
+    bars(monItems(unit),{title:'Fire alerts by month, this season'}),
+    s?null:flagBars(N),
+    el('div',{},el('h3',{text:'Provinces'}),rowList(provs,p=>selectUnit(p.id,true))),
+    el('div',{class:'btnrow'},el('a',{class:'btn ghost',href:'reports/fire_situation_summary.pdf',download:'PNG_fire_situation_summary_'+SEASON.end+'.pdf'},'Summary report (PDF)'),el('button',{class:'btn ghost',onclick:()=>showView('downloads')},'All downloads'))
+  );
+}
+function ratiovSafe(u){const r=ratiov(u);return r==null?'':`, ${r.toFixed(1)} times the average for this period`;}
+function sumYears(list){const o={};list.forEach(p=>{for(const k in p.years){o[k]=o[k]||[0,0];o[k][0]+=p.years[k][0];o[k][1]+=p.years[k][1];}});return o;}
+function sumMonthly(list){const o={};list.forEach(p=>{for(const k in p.monthly){o[k]=o[k]||[0,0];o[k][0]+=p.monthly[k][0];o[k][1]+=p.monthly[k][1];}});return o;}
+
+function selectUnit(id,zoom){
+  const u=BY[id];if(!u)return;state.sel={id};setHash(id);highlight();
+  const [ct,cc]=status(u);const kids=[];
+  if(u._kind==='prov'){
+    const dists=ST.districts.filter(d=>d.province_id===u.id).sort((a,b)=>nowv(b)-nowv(a));
+    const ar=ST.areas.filter(a=>a.province_id===u.id).sort((a,b)=>nowv(b)-nowv(a));
+    kids.push(el('button',{class:'back',onclick:renderOverview},'← Whole country'),el('h2',{text:u.name}),
+      el('div',{class:'chips'},el('span',{class:'chip '+cc,text:ct}),rankv(u)===1&&nowv(u)?el('span',{class:'chip bad',text:'Highest since '+SEASON.first_year}):null),
+      el('div',{class:'kpis'},kpi('Fire alerts, '+SEASON.label,f0(nowv(u)),'average '+f0(meanv(u))+' · '+rtxt(u)),kpi('2015 El Niño, same period',f0(u.y2015[ix()]),u.y2015[ix()]?Math.round(100*nowv(u)/u.y2015[ix()])+'% of 2015':'')),
+      bars(yearItems(u),{title:'Fire alerts in the same period of each year',ref:meanv(u),refLabel:'average of earlier years'}),
+      bars(monItems(u),{title:'Fire alerts by month, this season'}),flagBars(u),
+      el('div',{},el('h3',{text:dists.length+' districts'}),rowList(dists,d=>selectUnit(d.id,true))),
+      ar.length?el('div',{},el('h3',{text:ar.length+' protected areas and KBAs'}),rowList(ar,a=>selectUnit(a.id,true))):null,
+      el('div',{class:'btnrow'},dlBtn('Province report (PDF)','reports/provinces/'+u.id+'.pdf','PNG_fire_'+short(u.name).replace(/\W+/g,'_')+'_'+SEASON.end+'.pdf'),dlBtn('Province map (JPG)','maps/provinces/'+u.id+'.jpg','PNG_fire_'+short(u.name).replace(/\W+/g,'_')+'_map.jpg',true),u.geostore?el('a',{class:'btn ghost',href:DAMS(u.geostore),target:'_blank',rel:'noopener'},'PNG DAMS report ↗'):null));
+  } else if(u._kind==='dist'){
+    const p=BY[u.province_id];
+    kids.push(el('button',{class:'back',onclick:()=>selectUnit(u.province_id,true)},'← '+(p?p.name:'Province')),el('h2',{text:u.name}),
+      el('p',{class:'meta',text:(p?p.name:'')+' · '+f0(u.area_km2)+' km²'}),el('div',{class:'chips'},el('span',{class:'chip '+cc,text:ct})),
+      el('div',{class:'kpis'},kpi('Fire alerts, '+SEASON.label,f0(nowv(u)),f1(u.density[ix()])+' per 100 km²'),kpi('Versus average',rtxt(u),'average '+f1(meanv(u)))),
+      bars(yearItems(u),{title:'Fire alerts in the same period of each year',ref:meanv(u),refLabel:'average of earlier years'}),
+      bars(monItems(u),{title:'Fire alerts by month, this season'}),flagBars(u),
+      u.geostore?el('div',{class:'btnrow'},el('a',{class:'btn ghost',href:DAMS(u.geostore),target:'_blank',rel:'noopener'},'PNG DAMS report ↗')):null);
+  } else {
+    const p=BY[u.province_id];const pa=u.kind==='pa';
+    const ext=pa?'https://www.protectedplanet.net/'+u.uid:'https://www.keybiodiversityareas.org/site/factsheet/'+u.uid;
+    kids.push(el('button',{class:'back',onclick:()=>p?selectUnit(p.id,true):renderOverview()},'← '+(p?p.name:'Whole country')),el('h2',{text:u.name}),
+      el('p',{class:'meta',text:[pa?(u.desig||'Protected area'):'Key Biodiversity Area',pa&&u.iucn&&u.iucn!=='Not Reported'?'IUCN '+u.iucn:null,pa&&u.status_yr?'since '+u.status_yr:null,p?p.name:null,f0(u.area_ha)+' ha'].filter(Boolean).join(' · ')}),
+      el('div',{class:'chips'},el('span',{class:'chip '+cc,text:ct}),rankv(u)===1&&nowv(u)?el('span',{class:'chip bad',text:'Highest since '+SEASON.first_year}):null),
+      el('div',{class:'kpis'},kpi('Fire alerts inside, '+SEASON.label,f0(nowv(u)),'average '+f1(meanv(u))+' · '+rtxt(u)),kpi('Within '+CFG.ring_km+' km outside',f0(u.ring[ix()]),'same period')),
+      bars(yearItems(u),{title:'Fire alerts inside, same period of each year',ref:meanv(u),refLabel:'average of earlier years'}),
+      bars(monItems(u),{title:'Fire alerts inside by month, this season'}),flagBars(u),
+      el('div',{class:'btnrow'},u.geostore?el('a',{class:'btn ghost',href:DAMS(u.geostore),target:'_blank',rel:'noopener'},'PNG DAMS report ↗'):null,el('a',{class:'btn ghost',href:ext,target:'_blank',rel:'noopener'},pa?'Protected Planet ↗':'KBA factsheet ↗')),
+      el('p',{class:'note',text:'PNG DAMS reports are calculated live and can take up to a minute for large areas. Boundary: '+(pa?'World Database on Protected Areas':'World Database of Key Biodiversity Areas')+'.'}));
+  }
+  panel.replaceChildren(...kids.filter(Boolean));
+  if(zoom){showView('map');fitUnit(u);}
+}
+function fitUnit(u){
+  if(u._kind==='prov'||u._kind==='dist'){const L_=u._kind==='prov'?provLayer:distLayer;let b=null;L_&&L_.eachLayer(l=>{if(l.feature.properties.id===u.id)b=l.getBounds();});
+    if(!b&&u._kind==='dist'){L.geoJSON(DIST).eachLayer(l=>{if(l.feature.properties.id===u.id)b=l.getBounds();});}
+    if(b)map.fitBounds(b,{padding:[20,20]});}
+  else if(u.bbox)map.fitBounds([[u.bbox[1],u.bbox[0]],[u.bbox[3],u.bbox[2]]],{padding:[40,40],maxZoom:12});
+}
+
+/* ---------- map ---------- */
+const FireLayer=L.Layer.extend({
+  onAdd(m){this._m=m;this._c=L.DomUtil.create('canvas');this._c.style.position='absolute';this._c.style.pointerEvents='none';m.getPanes().overlayPane.appendChild(this._c);m.on('moveend zoomend resize viewreset',this._draw,this);m.on('zoomstart',this._hide,this);this._draw();},
+  onRemove(m){L.DomUtil.remove(this._c);m.off('moveend zoomend resize viewreset',this._draw,this);m.off('zoomstart',this._hide,this);},
+  _hide(){this._c.style.visibility='hidden';},
+  _draw(){const m=this._m,c=this._c,sz=m.getSize(),dpr=window.devicePixelRatio||1;c.style.visibility='visible';L.DomUtil.setPosition(c,m.containerPointToLayerPoint([0,0]));c.width=sz.x*dpr;c.height=sz.y*dpr;c.style.width=sz.x+'px';c.style.height=sz.y+'px';
+    const g=c.getContext('2d');g.scale(dpr,dpr);const z=m.getZoom();const r=z<6?1:z<7?1.4:z<8?1.9:z<10?2.7:z<12?3.7:4.8;const b=m.getBounds().pad(0.05);const rows=visibleFires();
+    for(const mo of MKEYS){g.fillStyle=MCOL[mo];g.strokeStyle='rgba(0,0,0,.55)';g.lineWidth=z>=9?0.6:0.3;g.beginPath();
+      for(const p of rows){if(p[5]!==mo)continue;if(p[1]<b.getSouth()||p[1]>b.getNorth()||p[0]<b.getWest()||p[0]>b.getEast())continue;const pt=m.latLngToContainerPoint([p[1],p[0]]);g.moveTo(pt.x+r,pt.y);g.arc(pt.x,pt.y,r,0,6.2832);}
+      g.fill();if(z>=8)g.stroke();}}
+});
+function visibleFires(){const s=progProv();return FIRES.filter(p=>(!s||(p[4]>=0&&s.has(ST.provinces[p[4]].id)))&&(state.month==='all'||p[5]===state.month)&&(!state.nl||!(p[3]&LOWBIT)));}
+function distColor(v){const br=[0.5,2,5,10,20,40],cs=['#fff3e0','#ffd8a8','#ffb070','#f57c3a','#d9480f','#a61e0b','#6b0f06'];let i=0;while(i<br.length&&v>=br[i])i++;return cs[i];}
+function distVal(p){const d=BY[p.id];if(!d)return 0;if(state.month==='all')return d.density[ix()];return 100*((d.monthly[state.month]||[0,0])[ix()])/d.area_km2;}
+let DIST=null;
+function highlight(){
+  const sel=state.sel&&state.sel.id;
+  if(distLayer)distLayer.setStyle(f=>{const vis=inProg(f.properties.province_id);const on=sel===f.properties.id;return{color:on?'#00e5ff':'#333',weight:on?3:0.6,fillColor:distColor(distVal(f.properties)),fillOpacity:vis?0.6:0,opacity:vis?0.8:0.15};});
+  if(provLayer)provLayer.setStyle(f=>{const on=sel===f.properties.id;const vis=inProg(f.properties.id);return{color:on?'#00e5ff':'#ffffff',weight:on?3.5:1.6,fill:!$('#l-dist').checked,fillOpacity:0,opacity:vis?0.95:0.3};});
+}
+function updateCount(){$('#count-line').textContent=f0(visibleFires().length)+' fire alerts shown ('+(state.month==='all'?SEASON.label:MONTHS[state.month])+')';}
+function legend(){
+  const L_=$('#legend');L_.replaceChildren(el('strong',{text:'Fire alerts'}),...MKEYS.filter(m=>state.month==='all'||m===state.month).map(m=>el('div',{class:'row'},el('i',{class:'dot',style:'background:'+MCOL[m]}),MONTHS[m])));
+  if($('#l-dist').checked)L_.append(el('strong',{text:'District alerts per 100 km²'}),el('div',{class:'row'},...[0.2,1,3,7,15,30,60].map(v=>el('i',{class:'sw',style:'background:'+distColor(v)})),' 0 → 40+'));
+  [['l-pa','#18a999','Protected area'],['l-kba','#3b82f6','Key Biodiversity Area'],['l-ifl','#2e7d32','Intact forest landscape']].filter(o=>$('#'+o[0]).checked).forEach(([_,c,t])=>L_.append(el('div',{class:'row'},el('i',{class:'sw',style:'background:'+c+'33;border:1.5px solid '+c}),t)));
+  [['l-prim','Primary forest (GFW colours)'],['l-peat','Peatlands (GFW colours)'],['l-mang','Mangroves (GFW colours)']].filter(o=>$('#'+o[0]).checked).forEach(([_,t])=>L_.append(el('div',{class:'row note',text:t})));
+}
+function refresh(){highlight();if(fireLayer&&map.hasLayer(fireLayer))fireLayer._draw();updateCount();legend();if(!state.sel)renderOverview();else selectUnit(state.sel.id,false);drawTable();}
+function vg(name,layer,color,fill,idKey,onpick){
+  if(!L.vectorGrid)return null;
+  const style={};style[layer]={weight:1.4,color,fill:true,fillColor:color,fillOpacity:fill,opacity:0.95};
+  const g=L.vectorGrid.protobuf(TILE+name+'/{z}/{x}/{y}.pbf',{vectorTileLayerStyles:style,interactive:!!onpick,maxNativeZoom:12,minZoom:4,getFeatureId:f=>f.properties[idKey],attribution:'GFW'});
+  if(onpick)g.on('click',e=>{L.DomEvent.stopPropagation(e);onpick(e.layer.properties);});
+  return g;
+}
+async function init(){
+  const get=f=>fetch('data/'+f,{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error(f);return r.json();});
+  const [st,prov,dist,fires]=await Promise.all(['stats.json','provinces.geojson','districts.geojson','fires.json'].map(get));
+  ST=st;SEASON=st.season;CFG=st.config;CUR=SEASON.current;LOWBIT=fires.low_bit;DIST=dist;MKEYS=SEASON.months;
+  MKEYS.forEach((m,i)=>{MCOL[m]=RAMP[Math.min(i,RAMP.length-1)];const mo=+m.slice(5)-1;let l=MN[mo];if(m===SEASON.end.slice(0,7)&&+SEASON.end.slice(8)<28)l='1–'+(+SEASON.end.slice(8))+' '+l;MONTHS[m]=l+' '+m.slice(0,4);MSHORT[m]=MN[mo].slice(0,3);});
+  const t0=Date.parse(SEASON.start);FIRES=fires.rows.map(r=>{r[5]=new Date(t0+r[2]*864e5).toISOString().slice(0,7);return r;});
+  st.provinces.forEach(p=>{p._kind='prov';BY[p.id]=p;});st.districts.forEach(d=>{d._kind='dist';BY[d.id]=d;});st.areas.forEach(a=>{a._kind='area';BY[a.id]=a;});
+  // header
+  $('#app-title').textContent=CFG.title;document.title=CFG.title;$('#app-sub').textContent=CFG.subtitle;
+  const end=new Date(SEASON.end+'T00:00:00Z');$('#hdr-date').textContent=end.getUTCDate()+' '+MN[end.getUTCMonth()].slice(0,3)+' '+end.getUTCFullYear();
+  $('#hdr-upd').textContent=SEASON.updated;$('#upd2').textContent=SEASON.updated;$$('.lab').forEach(e=>e.textContent=SEASON.label);$$('.fy').forEach(e=>e.textContent=SEASON.first_year);
+  $('#footer').textContent=CFG.credit+' · Data: NASA VIIRS via Global Forest Watch; OCHA COD-AB (CC BY-IGO); WDPA (UNEP-WCMC & IUCN); BirdLife KBAs; UMD; Global Mangrove Watch; Esri; OpenStreetMap. Last update '+SEASON.updated+'.';
+  // controls
+  $('#f-prog').replaceChildren(el('button',{'data-v':'all','aria-pressed':'true'},'Whole country'),...(CFG.programmes||[]).map(p=>el('button',{'data-v':p.id,'aria-pressed':'false',title:p.description||''},p.name)));
+  $('#f-month').replaceChildren(el('button',{'data-v':'all','aria-pressed':'true'},'Whole season'),...MKEYS.map(m=>el('button',{'data-v':m,'aria-pressed':'false'},el('i',{class:'dot',style:'background:'+MCOL[m]}),MSHORT[m])));
+  seg('f-prog','prog');seg('f-month','month');
+  if(!(CFG.programmes||[]).length){$('#f-prog').hidden=true;$('#f-prog').previousElementSibling.hidden=true;}
+  $('#z-prov').append(...st.provinces.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>el('option',{value:p.id},short(p.name))));
+  $('#z-prov').addEventListener('change',e=>{if(e.target.value)selectUnit(e.target.value,true);e.target.value='';});
+  // map
+  map=L.map('map',{zoomSnap:0.5,preferCanvas:true,minZoom:5});map.attributionControl.setPrefix(false);
+  bgImg=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Imagery © Esri, Maxar, Earthstar Geographics'});
+  bgOsm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap contributors'});
+  primLayer=L.tileLayer(TILE+'umd_regional_primary_forest_2001/latest/default/{z}/{x}/{y}.png',{maxNativeZoom:12,opacity:0.7,attribution:'Primary forest: UMD/GFW'});
+  peatLayer=L.tileLayer(TILE+'gfw_peatlands/latest/default/{z}/{x}/{y}.png',{maxNativeZoom:12,opacity:0.7,attribution:'Peatlands: GFW'});
+  mangLayer=L.tileLayer(TILE+'gmw_global_mangrove_extent/latest/default/{z}/{x}/{y}.png',{maxNativeZoom:12,opacity:0.85,attribution:'Mangroves: Global Mangrove Watch'});
+  iflLayer=vg('ifl_intact_forest_landscapes/v2021/default','ifl_intact_forest_landscapes','#2e7d32',0.12,'gfw_fid',null);
+  paLayer=vg('wdpa_protected_areas/latest/default','wdpa_protected_areas','#18a999',0.12,'site_id',p=>{const u=BY['pa-'+p.site_id];u?selectUnit(u.id,false):toast((p.name||'Protected area')+': marine or not in the dashboard');});
+  kbaLayer=vg('birdlife_key_biodiversity_areas/latest/default','birdlife_key_biodiversity_areas','#3b82f6',0.1,'sitrecid',p=>{const u=BY['kba-'+p.sitrecid];u?selectUnit(u.id,false):toast(p.natname||'KBA');});
+  provLayer=L.geoJSON(prov,{onEachFeature:(f,l)=>{l.bindTooltip(()=>short(f.properties.name)+' · '+f0(nowv(BY[f.properties.id]))+' alerts',{sticky:true});l.on('click',e=>{L.DomEvent.stopPropagation(e);if(!pickFire(e))selectUnit(f.properties.id,false);});}}).addTo(map);
+  distLayer=L.geoJSON(dist,{onEachFeature:(f,l)=>{l.bindTooltip(()=>{const d=BY[f.properties.id];return short(f.properties.name)+': '+f0(state.month==='all'?nowv(d):(d.monthly[state.month]||[0,0])[ix()])+' alerts';},{sticky:true});l.on('click',e=>{L.DomEvent.stopPropagation(e);if(!pickFire(e))selectUnit(f.properties.id,false);});}});
+  fireLayer=new FireLayer();
+  map.on('click',e=>pickFire(e));
+  map.fitBounds(CFG.map_bounds);syncLayers();
+  const h=location.hash.slice(1);if(h&&BY[h])selectUnit(h,true);else renderOverview();
+  refresh();buildDownloads();
+  // bboxes for PA/KBA zoom come from the GFW vector tiles' features are not available, so use the area table
+  ST.areas.forEach(a=>{if(a.bbox)return;});
+}
+function pickFire(e){
+  if(!map.hasLayer(fireLayer))return false;const pt=map.latLngToContainerPoint(e.latlng);let best=null,bd=64;
+  for(const p of visibleFires()){const q=map.latLngToContainerPoint([p[1],p[0]]);const d=(q.x-pt.x)**2+(q.y-pt.y)**2;if(d<bd){bd=d;best=p;}}
+  if(!best)return false;const dt=new Date(Date.parse(SEASON.start)+best[2]*864e5);
+  const fl=CFG.flags.filter((f,i)=>best[3]&(1<<i)).map(f=>f.label);
+  L.popup().setLatLng([best[1],best[0]]).setContent(`<strong>VIIRS fire alert</strong>${best[3]&LOWBIT?' (low confidence)':''}<br>${dt.toUTCString().slice(5,16)} · ${best[4]>=0?short(ST.provinces[best[4]].name):''}<br>${fl.length?fl.join(' · '):'Outside forest, protected areas and KBAs'}<br>${best[1].toFixed(4)}, ${best[0].toFixed(4)}`).openOn(map);return true;
+}
+function syncLayers(){
+  const t=(on,l)=>{if(!l)return;on?(!map.hasLayer(l)&&l.addTo(map)):(map.hasLayer(l)&&map.removeLayer(l));};
+  t($('#bg-img').checked,bgImg);t($('#bg-osm').checked,bgOsm);
+  t($('#l-prim').checked,primLayer);t($('#l-peat').checked,peatLayer);t($('#l-mang').checked,mangLayer);
+  t($('#l-dist').checked,distLayer);t($('#l-ifl').checked,iflLayer);t($('#l-kba').checked,kbaLayer);t($('#l-pa').checked,paLayer);
+  t($('#l-fires').checked,fireLayer);
+  if(provLayer)provLayer.bringToFront();if(distLayer&&map.hasLayer(distLayer))distLayer.bringToFront();
+  if(!L.vectorGrid)['l-pa','l-kba','l-ifl'].forEach(i=>{$('#'+i).disabled=true;});
+  legend();highlight();
+}
+
+/* ---------- areas table ---------- */
+let sk='now',sd=-1;
+function rowsFor(kind){return kind==='prov'?ST.provinces:kind==='dist'?ST.districts:ST.areas.filter(a=>a.kind===kind);}
+function drawTable(){
+  if(!ST)return;const kind=$('#a-kind').value,q=$('#a-q').value.toLowerCase();
+  const pn=id=>BY[id]?short(BY[id].name):'';
+  const val=(u,k)=>k==='name'?u.name.toLowerCase():k==='prov'?pn(u._kind==='prov'?u.id:u.province_id):k==='area'?(u.area_ha||u.area_km2*100||0):k==='now'?nowv(u):k==='mean'?meanv(u):k==='ratio'?(ratiov(u)==null?(nowv(u)?1e9:-1):ratiov(u)):k==='rank'?rankv(u):k==='ring'?(u.ring?u.ring[ix()]:-1):0;
+  let rows=rowsFor(kind).filter(u=>inProg(u._kind==='prov'?u.id:u.province_id)&&(!q||(u.name+' '+pn(u.province_id)).toLowerCase().includes(q)));
+  rows=rows.slice().sort((a,b)=>{const x=val(a,sk),y=val(b,sk);return(x<y?-1:x>y?1:0)*sd;});
+  $$('#a-table th').forEach(th=>th.setAttribute('aria-sort',th.querySelector('button').dataset.k===sk?(sd>0?'ascending':'descending'):'none'));
+  const mx=Math.max(1,...rows.map(nowv));
+  $('#a-table tbody').replaceChildren(...rows.map(u=>el('tr',{onclick:()=>selectUnit(u.id,true)},
+    el('td',{text:short(u.name)}),el('td',{class:'hn',text:pn(u._kind==='prov'?u.id:u.province_id)}),
+    el('td',{class:'n hn',text:u.area_ha?f0(u.area_ha)+' ha':u.area_km2?f0(u.area_km2)+' km²':''}),
+    el('td',{class:'n'},el('i',{class:'bar',style:'width:'+Math.round(46*Math.sqrt(nowv(u)/mx))+'px'}),f0(nowv(u))),
+    el('td',{class:'n hn',text:f1(meanv(u))}),el('td',{class:'n',style:'color:'+({bad:'var(--bad)',warn:'var(--warn)'}[status(u)[1]]||'inherit'),text:rtxt(u)}),
+    el('td',{class:'n hn',text:String(rankv(u))}),el('td',{class:'n hn',text:u.ring?f0(u.ring[ix()]):''}))));
+}
+$$('#a-table th button').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.k;if(sk===k)sd=-sd;else{sk=k;sd=['name','prov'].includes(k)?1:-1;}drawTable();}));
+$('#a-kind').addEventListener('change',drawTable);$('#a-q').addEventListener('input',drawTable);
+
+/* ---------- downloads ---------- */
+function buildDownloads(){
+  const tag=SEASON.end;const P=ST.provinces.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const item=(name,url,fn)=>el('div',{class:'ditem'},el('span',{},name),dlBtn('Save',url,fn,true));
+  const group=(title,desc,items,zip)=>el('div',{class:'card dlgroup'},el('h3',{text:title}),el('p',{text:desc}),zip||null,el('div',{class:'dlist'},items));
+  const zipBtn=(label,list,zn)=>el('div',{class:'btnrow',style:'margin-bottom:8px'},el('button',{class:'btn',onclick:e=>saveZip(list,zn,e.currentTarget)},label));
+  const sl=p=>short(p.name).replace(/\W+/g,'_');
+  const data=[['Area summary: provinces, districts, protected areas, KBAs (CSV)','downloads/area_summary.csv','area_summary.csv'],
+    ['Alerts in the same period of each year, all areas (CSV)','downloads/alerts_by_year_same_period.csv','alerts_by_year_same_period.csv'],
+    ['VIIRS alert points this season, with land-class flags (CSV)','downloads/viirs_alerts_season.csv','viirs_alerts_season.csv'],
+    ['Province boundaries (GeoJSON, OCHA COD-AB)','data/provinces.geojson','png_provinces.geojson'],['District boundaries (GeoJSON, OCHA COD-AB)','data/districts.geojson','png_districts.geojson']];
+  $('#dlgrid').replaceChildren(
+    el('div',{class:'card dlgroup'},el('h3',{text:'Fire situation summary'}),el('p',{text:'Three pages: key points and national map, the national trend and every province, and the protected areas and KBAs with the most fire. Regenerated with every update.'}),el('a',{class:'btn',href:'reports/fire_situation_summary.pdf',download:'PNG_fire_situation_summary_'+tag+'.pdf'},'Download summary (PDF)')),
+    group('Province reports','Two pages per province: satellite map with this season\'s alerts, key figures, where the alerts fall, districts, trend, and protected areas and KBAs.',P.map(p=>item(short(p.name),'reports/provinces/'+p.id+'.pdf','PNG_fire_'+sl(p)+'_'+tag+'.pdf')),
+      zipBtn('Save all '+P.length+' (zip)',P.map(p=>({url:'reports/provinces/'+p.id+'.pdf',name:sl(p)+'.pdf'})),'PNG_fire_province_reports_'+tag+'.zip')),
+    group('Maps','National overview (PNG) and a satellite map of each province (JPG).',[item('National overview','maps/overview/national.png','PNG_fire_national_'+tag+'.png'),...P.map(p=>item(short(p.name),'maps/provinces/'+p.id+'.jpg','PNG_fire_'+sl(p)+'_map_'+tag+'.jpg'))],
+      zipBtn('Save all maps (zip)',[{url:'maps/overview/national.png',name:'national.png'},...P.map(p=>({url:'maps/provinces/'+p.id+'.jpg',name:sl(p)+'.jpg'}))],'PNG_fire_maps_'+tag+'.zip')),
+    group('Data','Tables and boundaries behind the dashboard. Protected area and KBA boundaries are not included: download them from protectedplanet.net and keybiodiversityareas.org under their terms.',data.map(([t,u,f])=>item(t,u,f.replace(/(\.[a-z]+)$/,'_'+tag+'$1'))),
+      zipBtn('Save all data (zip)',data.map(([t,u,f])=>({url:u,name:f})),'PNG_fire_data_'+tag+'.zip'))
+  );
+}
+
+/* ---------- tabs and controls ---------- */
+function showView(v){$$('nav.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.view===v?'true':'false'));$$('.view').forEach(s=>s.hidden=s.id!=='view-'+v);if(v==='map'&&map)setTimeout(()=>map.invalidateSize(),50);}
+$$('nav.tabs button').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
+function seg(id,key){$$('#'+id+' button').forEach(b=>b.addEventListener('click',()=>{$$('#'+id+' button').forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));state[key]=b.dataset.v;refresh();}));}
+$('#f-nl').addEventListener('change',e=>{state.nl=e.target.checked;refresh();});
+$$('#layers input').forEach(i=>i.addEventListener('change',syncLayers));
+$$('.zoombar button').forEach(b=>b.addEventListener('click',()=>{map.fitBounds(CFG.map_bounds);}));
+if(window.innerWidth<700){$('#layers').removeAttribute('open');$('#legendbox').removeAttribute('open');}
+init().catch(e=>{console.error(e);panel.replaceChildren(el('h2',{text:'Data did not load'}),el('p',{class:'meta',text:'Reload the page. If it keeps failing, the latest update may still be publishing.'}));});
+})();
+</script>
+</body>
+</html>
