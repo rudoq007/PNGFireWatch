@@ -38,7 +38,7 @@ REGIONS = ["SouthEast_Asia", "Australia_NewZealand"]
 PUBLIC = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/{folder}/csv/{prefix}_{region}_7d.csv"
 API = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{key}/{source}/{bbox}/{days}/{date}"
 STORE = os.path.join(INP, "firms_points.csv.gz")
-KEY = os.environ.get("FIRMS_MAP_KEY", "").strip()
+KEY = os.environ.get("FIRMS_MAP_KEY", "").strip().strip("'\"").strip()
 COLS = ["latitude", "longitude", "alert__date", "alert__time_utc", "confidence__cat", "satellite", "frp", "daynight"]
 S = requests.Session()
 
@@ -125,7 +125,10 @@ def update_store(sat, season_start, need_from=None):
                    if str(need_from + dt.timedelta(days=i)) not in have]
         if missing:
             log("FIRMS: filling", len(missing), "days from the API, from", missing[0])
-            parts.append(period_api(sat, missing[0], missing[-1]))
+            try:
+                parts.append(period_api(sat, missing[0], missing[-1]))
+            except Exception as e:  # a bad or expired key must not stop the update; the public files still work
+                log("FIRMS API back-fill skipped:", e)
     allp = pd.concat([p for p in parts if len(p)], ignore_index=True) if any(len(p) for p in parts) else pd.DataFrame(columns=COLS)
     allp = allp[allp.alert__date >= str(season_start)]
     allp = allp.drop_duplicates(subset=["latitude", "longitude", "alert__date", "alert__time_utc", "satellite"]).sort_values(["alert__date", "alert__time_utc"])
