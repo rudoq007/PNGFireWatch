@@ -76,6 +76,7 @@ main{padding-block:14px 32px}
 .hbar i{display:block;height:9px;border-radius:5px;background:var(--ember)}
 .note{font-size:12.5px;color:var(--muted)}
 .back{align-self:flex-start;font:600 12px var(--body);background:transparent;border:0;color:var(--muted);cursor:pointer;padding:0}
+.notice{border:1px solid var(--line);border-left:4px solid var(--muted);background:var(--panel);border-radius:8px;padding:8px 12px;margin:0 0 12px;font-size:13.5px}.notice p{margin:2px 0}.notice.warn{border-left-color:#d97706;background:#fff7e6;color:#5a3a00}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:8px;font-size:13px;z-index:2000}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
 .tbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -121,6 +122,7 @@ footer.site{border-top:1px solid var(--line);padding-block:14px 28px;font-size:1
 </header>
 
 <main class="wrap">
+  <div id="notice" class="notice" role="status" hidden></div>
   <section class="view" id="view-map">
     <div class="controls">
       <span class="lbl">Show</span>
@@ -189,16 +191,19 @@ footer.site{border-top:1px solid var(--line);padding-block:14px 28px;font-size:1
     <p>Each dot is a NASA VIIRS 375 m active-fire alert in the current fire season (<span class="lab"></span>), coloured by month. One fire can produce several alerts over several days, and smoke or cloud can hide fires, so alert counts show fire activity, not burned area.</p>
     <h2>Comparing years</h2>
     <p>Every province, district, protected area and Key Biodiversity Area is compared with the same calendar period in every year since <span class="fy"></span>. "Rank" is the position of this season among all those years (1 = highest).</p>
-    <p><strong>Satellites.</strong> The Global Forest Watch VIIRS dataset is the VNP14IMGT product from the Suomi NPP satellite only. Alerts from NOAA-20 and NOAA-21, launched in 2017 and 2022, are not included, so the record since 2012 comes from one sensor and adding satellites does not inflate recent years.</p>
+    <p><strong>Satellites.</strong> Until 21 October 2026 the alerts are the Global Forest Watch VIIRS dataset, which is the VNP14IMGT product from the Suomi NPP satellite only, so the record since 2012 comes from one sensor. NOAA stops delivering Suomi NPP data on 2 November 2026 at 13:00 UTC, so from 22 October 2026 new alerts come directly from NASA FIRMS, from NOAA-20 (VIIRS, same 375 m product), with NOAA-21 kept as a backup. A notice at the top of the page shows when alerts from another satellite are included.</p>
+    <p><strong>Comparing satellites.</strong> NOAA-20 detects a different number of alerts than Suomi NPP: its orbit is about 50 minutes apart, and on any one day the two can differ by a factor of two or more. To keep the comparison with 2012–2025 fair, NOAA-20 counts are converted to Suomi NPP equivalents with a factor measured over the seasons when both satellites flew (2018–2026). The factor in use is shown in the notice. Until it is set, counts from NOAA-20 are shown as observed.</p>
+    <p><strong>Gaps in 2026.</strong> Suomi NPP had two outages this season. There are no alerts for 11–16 July 2026, and none for 3 August and the daytime pass of 4 August. NASA later excluded Suomi NPP data from 3 August 02:00 UTC to 6 August 16:24 UTC from standard processing; the near-real-time alerts for 4–6 August (about 1,600 for PNG) remain in the Global Forest Watch data. Because of the gaps, this season's totals slightly understate fire activity.</p>
+    <p><strong>Data freshness.</strong> If the newest alerts are more than three days old, or the page has not been rebuilt for 36 hours, a warning appears at the top of the page.</p>
     <p><strong>Confidence.</strong> Each alert has a confidence of low, nominal or high. Use "Exclude low-confidence alerts" to drop low-confidence alerts everywhere on the dashboard. In tests for Western Province, excluding them changed totals by 7–14% and barely changed comparisons between years, so all alerts are shown by default, as on Global Forest Watch.</p>
     <h2>Layers and sources</h2>
     <table>
       <thead><tr><th>Layer</th><th>Source</th><th>Licence or terms</th></tr></thead>
       <tbody>
-        <tr><td>Fire alerts</td><td>NASA FIRMS VIIRS (S-NPP), via the GFW Data API</td><td>NASA open data policy</td></tr>
+        <tr><td>Fire alerts</td><td>NASA VIIRS 375 m active fires: Suomi NPP via the GFW Data API to 21 Oct 2026; NOAA-20 from NASA FIRMS from 22 Oct 2026</td><td>NASA open data policy</td></tr>
         <tr><td>Provinces and districts</td><td>OCHA COD-AB, PNG National Statistical Office</td><td>CC BY-IGO</td></tr>
-        <tr><td>Protected areas</td><td>World Database on Protected Areas (UNEP-WCMC &amp; IUCN), GFW tiles</td><td>WDPA terms of use; boundaries are shown, not redistributed</td></tr>
-        <tr><td>Key Biodiversity Areas</td><td>World Database of KBAs (BirdLife International), GFW tiles</td><td>Non-commercial; boundaries are shown, not redistributed</td></tr>
+        <tr><td>Protected areas</td><td>UNEP-WCMC and IUCN (2025), Protected Planet: The World Database on Protected Areas (WDPA), December 2025 release, Cambridge, UK. <a href="https://www.protectedplanet.net" target="_blank" rel="noopener">protectedplanet.net</a>. Shown through GFW tiles.</td><td>WDPA terms: non-commercial; boundaries shown but not downloadable; counts per area are a derived analysis</td></tr>
+        <tr><td>Key Biodiversity Areas</td><td>BirdLife International (2025), World Database of Key Biodiversity Areas, September 2025 version, developed by the KBA Partnership. <a href="https://www.keybiodiversityareas.org" target="_blank" rel="noopener">keybiodiversityareas.org</a>. Shown through GFW tiles.</td><td>KBA terms: non-commercial; boundaries shown but not downloadable; counts per KBA are a derived analysis</td></tr>
         <tr><td>Intact forest landscapes</td><td>Potapov et al. / intactforests.org, GFW tiles</td><td>CC BY 4.0</td></tr>
         <tr><td>Primary forest 2001</td><td>Turubanova et al. (UMD), GFW tiles</td><td>CC BY 4.0</td></tr>
         <tr><td>Peatlands, mangroves</td><td>GFW peatlands composite; Global Mangrove Watch 2020</td><td>See globalforestwatch.org</td></tr>
@@ -231,7 +236,7 @@ const MN=['January','February','March','April','May','June','July','August','Sep
 const RAMP=['#ffe08a','#ffa53d','#f0532a','#b5002a','#7a0026','#4d0019','#2e000f'];
 const DAMS=gs=>'https://my.gfw-mapbuilder.org/v1.latest/index.html?appid=c8e4162ef1dd4891aad9b560ac88e55b&report=true&geostoreID='+gs+'&acLayer=user_features&acSublayer=undefined&objectid=undefined&b=webmap&l=en&d=5&ty=2001%2C2025&layers=&o=&gladconfirmed=false&gs='+SEASON.start+'&ge='+SEASON.end;
 const TILE='https://tiles.globalforestwatch.org/';
-let ST, SEASON, CFG, CUR, MKEYS=[], MCOL={}, MONTHS={}, MSHORT={}, FIRES=[], LOWBIT=1024;
+let ST, SEASON, CFG, CUR, MKEYS=[], MCOL={}, MONTHS={}, MSHORT={}, FIRES=[], LOWBIT=1024, SATBIT=0;
 const state={prog:'all',month:'all',nl:false,sel:null};
 const ix=()=>state.nl?1:0;
 let map, fireLayer, provLayer, distLayer, paLayer, kbaLayer, iflLayer, primLayer, peatLayer, mangLayer, bgImg, bgOsm, BY={};
@@ -279,10 +284,22 @@ const progProv=()=>{if(state.prog==='all')return null;const p=(CFG.programmes||[
 const inProg=pid=>{const s=progProv();return !s||s.has(pid);};
 function kpi(k,v,n){return el('div',{class:'kpi'},el('span',{class:'k',text:k}),el('span',{class:'v',text:v}),n?el('span',{class:'n',text:n}):null);}
 function setHash(id){try{history.replaceState(null,'',id?'#'+id:location.pathname+location.search);}catch(e){}}
-function flagBars(u){const tot=Math.max(1,nowv(u));const fl=CFG.flags.map(f=>({label:f.label,v:(u.flags[f.key]||[0,0])[ix()]})).filter(f=>f.v>0).sort((a,b)=>b.v-a.v);
+function flagBars(u){const tot=Math.max(1,u.flags._base?u.flags._base[ix()]:nowv(u));const fl=CFG.flags.map(f=>({label:f.label,v:(u.flags[f.key]||[0,0])[ix()]})).filter(f=>f.v>0).sort((a,b)=>b.v-a.v);
   if(!fl.length)return null;const mx=Math.max(...fl.map(f=>f.v));
   return el('div',{},el('h3',{text:'Where the alerts fall'}),el('div',{style:'display:flex;flex-direction:column;gap:4px;margin-top:6px'},fl.map(f=>el('div',{class:'hbar'},el('span',{text:f.label}),el('i',{style:'width:'+Math.max(2,Math.round(100*f.v/mx))+'%'}),el('span',{class:'meta',text:f0(f.v)+' · '+Math.round(100*f.v/tot)+'%'})))),
-    el('p',{class:'note',text:'Categories overlap: an alert can be in a KBA, a protected area and primary forest at once.'}));}
+    el('p',{class:'note',text:'Categories overlap: an alert can be in a KBA, a protected area and primary forest at once.'+(SEASON.flags_basis?' Shares are of '+SEASON.flags_basis+'.':'')}));}
+
+/* ---------- data freshness and satellite notices ---------- */
+function dataNotice(end){
+  const msgs=[];const now=Date.now();const fmtd=d=>d.getUTCDate()+' '+MN[d.getUTCMonth()]+' '+d.getUTCFullYear();
+  const endAge=(now-end.getTime())/864e5-1;const upd=Date.parse(String(SEASON.updated).replace(' UTC','Z').replace(' ','T'));const updAge=(now-upd)/36e5;
+  const stale=endAge>3||updAge>36;
+  if(endAge>3)msgs.push('Data may not be current. The latest fire alerts are from '+fmtd(end)+', '+Math.floor(endAge)+' days ago, so the satellite feed may be interrupted. Do not read these figures as today\'s situation.');
+  else if(updAge>36)msgs.push('This page was last updated '+Math.round(updAge)+' hours ago ('+SEASON.updated+'). Newer alerts may exist.');
+  const src=SEASON.sources||[];
+  if(src.length>1){const s=src[1];const why=s.reason==='stalled'?'the Global Forest Watch feed stopped updating':s.from>='2026-11-02'?'Suomi NPP data ended on 2 November 2026':'Suomi NPP data end on 2 November 2026 and the switch was made early';
+    msgs.push('From '+fmtd(new Date(s.from+'T00:00:00Z'))+', alerts come from '+s.satellite+' via NASA FIRMS, because '+why+'. '+(s.factor?'Counts from that date are converted to Suomi NPP equivalents (÷'+s.factor+') so they can be compared with earlier years.':'Counts from that date are not yet adjusted for the change of satellite, so compare them with earlier years with care.'));}
+  if(!msgs.length)return;const n=$('#notice');n.replaceChildren(...msgs.map(m=>el('p',{text:m})));n.classList.toggle('warn',stale);n.hidden=false;}
 
 /* ---------- panel ---------- */
 const panel=$('#panel');
@@ -392,14 +409,14 @@ function vg(name,layer,color,fill,idKey,onpick){
 async function init(){
   const get=f=>fetch('data/'+f,{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error(f);return r.json();});
   const [st,prov,dist,fires]=await Promise.all(['stats.json','provinces.geojson','districts.geojson','fires.json'].map(get));
-  ST=st;SEASON=st.season;CFG=st.config;CUR=SEASON.current;LOWBIT=fires.low_bit;DIST=dist;MKEYS=SEASON.months;
+  ST=st;SEASON=st.season;CFG=st.config;CUR=SEASON.current;LOWBIT=fires.low_bit;SATBIT=fires.sat_bit||0;DIST=dist;MKEYS=SEASON.months;
   MKEYS.forEach((m,i)=>{MCOL[m]=RAMP[Math.min(i,RAMP.length-1)];const mo=+m.slice(5)-1;let l=MN[mo];if(m===SEASON.end.slice(0,7)&&+SEASON.end.slice(8)<28)l='1–'+(+SEASON.end.slice(8))+' '+l;MONTHS[m]=l+' '+m.slice(0,4);MSHORT[m]=MN[mo].slice(0,3);});
   const t0=Date.parse(SEASON.start);FIRES=fires.rows.map(r=>{r[5]=new Date(t0+r[2]*864e5).toISOString().slice(0,7);return r;});
   st.provinces.forEach(p=>{p._kind='prov';BY[p.id]=p;});st.districts.forEach(d=>{d._kind='dist';BY[d.id]=d;});st.areas.forEach(a=>{a._kind='area';BY[a.id]=a;});
   // header
   $('#app-title').textContent=CFG.title;document.title=CFG.title;$('#app-sub').textContent=CFG.subtitle;
   const end=new Date(SEASON.end+'T00:00:00Z');$('#hdr-date').textContent=end.getUTCDate()+' '+MN[end.getUTCMonth()].slice(0,3)+' '+end.getUTCFullYear();
-  $('#hdr-upd').textContent=SEASON.updated;$('#upd2').textContent=SEASON.updated;$$('.lab').forEach(e=>e.textContent=SEASON.label);$$('.fy').forEach(e=>e.textContent=SEASON.first_year);
+  dataNotice(end);$('#hdr-upd').textContent=SEASON.updated;$('#upd2').textContent=SEASON.updated;$$('.lab').forEach(e=>e.textContent=SEASON.label);$$('.fy').forEach(e=>e.textContent=SEASON.first_year);
   $('#footer').textContent=CFG.credit+' · Data: NASA VIIRS via Global Forest Watch; OCHA COD-AB (CC BY-IGO); WDPA (UNEP-WCMC & IUCN); BirdLife KBAs; UMD; Global Mangrove Watch; Esri; OpenStreetMap. Last update '+SEASON.updated+'.';
   // controls
   $('#f-prog').replaceChildren(el('button',{'data-v':'all','aria-pressed':'true'},'Whole country'),...(CFG.programmes||[]).map(p=>el('button',{'data-v':p.id,'aria-pressed':'false',title:p.description||''},p.name)));
@@ -433,7 +450,7 @@ function pickFire(e){
   for(const p of visibleFires()){const q=map.latLngToContainerPoint([p[1],p[0]]);const d=(q.x-pt.x)**2+(q.y-pt.y)**2;if(d<bd){bd=d;best=p;}}
   if(!best)return false;const dt=new Date(Date.parse(SEASON.start)+best[2]*864e5);
   const fl=CFG.flags.filter((f,i)=>best[3]&(1<<i)).map(f=>f.label);
-  L.popup().setLatLng([best[1],best[0]]).setContent(`<strong>VIIRS fire alert</strong>${best[3]&LOWBIT?' (low confidence)':''}<br>${dt.toUTCString().slice(5,16)} · ${best[4]>=0?short(ST.provinces[best[4]].name):''}<br>${fl.length?fl.join(' · '):'Outside forest, protected areas and KBAs'}<br>${best[1].toFixed(4)}, ${best[0].toFixed(4)}`).openOn(map);return true;
+  L.popup().setLatLng([best[1],best[0]]).setContent(`<strong>VIIRS fire alert</strong>${best[3]&LOWBIT?' (low confidence)':''}${SATBIT&&(best[3]&SATBIT)?' · NOAA-20 (FIRMS)':''}<br>${dt.toUTCString().slice(5,16)} · ${best[4]>=0?short(ST.provinces[best[4]].name):''}<br>${fl.length?fl.join(' · '):'Outside forest, protected areas and KBAs'}<br>${best[1].toFixed(4)}, ${best[0].toFixed(4)}`).openOn(map);return true;
 }
 function syncLayers(){
   const t=(on,l)=>{if(!l)return;on?(!map.hasLayer(l)&&l.addTo(map)):(map.hasLayer(l)&&map.removeLayer(l));};
