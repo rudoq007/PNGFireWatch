@@ -56,6 +56,18 @@ For example, to add a programme covering the Sepik provinces:
 {"id": "sepik", "name": "Sepik", "description": "East and West Sepik", "provinces": ["PG14", "PG15"]}
 ```
 
+## Suomi NPP end and the switch to NOAA-20 (from 22 October 2026)
+
+NOAA stopped delivering Suomi NPP data on 2 November 2026, 13:00 UTC. The Global Forest Watch VIIRS dataset is fed only from the Suomi NPP file (wri/gfw-datapump issue #213), so the pipeline takes new alerts directly from NASA FIRMS:
+
+- **Settings** in `config.json` → `firms`: `satellite` (`N20`), `backup` (`N21`), `from` (`2026-10-22`; the switch was made early, ahead of the end of Suomi NPP data on 2 November), `stall_days` (3: switch early if GFW has had no new alerts for longer), `factor` (NOAA-20 / Suomi NPP ratio; `null` until calibrated).
+- **Data.** `pipeline/firms.py` reads the public FIRMS 7-day files (no key) every run and keeps the season's alerts in `inputs/firms_points.csv.gz`, which the workflow commits. With a free FIRMS MAP_KEY (https://firms.modaps.eosdis.nasa.gov/api/map_key/) saved as the secret `FIRMS_MAP_KEY`, gaps longer than a week are filled from the FIRMS API.
+- **Before the switch date** GFW is used as before; FIRMS alerts are only collected.
+- **After it**, alerts up to 1 November are Suomi NPP from GFW and later ones are NOAA-20 from FIRMS. NOAA-20 alerts are counted inside provinces, districts and areas locally. They have no GFW land-class attributes, so land-class shares use the Suomi NPP alerts (protected area and KBA flags are added from the boundaries).
+- **Calibration.** `FIRMS_MAP_KEY=... python pipeline/calibrate.py` compares NOAA-20 with Suomi NPP for 1 July–31 October of 2018–2025 (and 2026) and writes `inputs/calibration.json`. Put `median_ratio` into `firms.factor`; counts after the switch are then divided by it.
+- **Notices.** The page shows a notice when alerts from another satellite are included, and a warning if the newest alerts are more than three days old or the page has not been rebuilt for 36 hours.
+- **Before 1 July 2027:** the comparison baseline is extended each new season from GFW (Suomi NPP). Decide by then whether to move the whole baseline to NOAA-20 (2018 onward) or keep Suomi NPP with the calibration factor.
+
 ## Data, licences and how they are used
 
 | Data | Source | Licence / terms | How it is used |
