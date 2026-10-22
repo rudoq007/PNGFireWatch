@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from common import (CFG, INP, VIIRS, assign_units, chunks, create_geostore, daily_by_unit, fetch_kbas,  # noqa: E402
                     fetch_protected_areas, load_admin, log, query, season_bounds, shift_year)
 import history  # noqa: E402
+import firms  # noqa: E402
 
 # bit flags stored with every alert point (see Method tab)
 FLAGS = [("tcd30", "Tree cover over 30% (2000)", "umd_tree_cover_density_2000__threshold"),
@@ -39,6 +40,7 @@ FLAGS = [("tcd30", "Tree cover over 30% (2000)", "umd_tree_cover_density_2000__t
          ("mining", "Mining concession", "is__gfw_mining_concessions"),
          ("indigenous", "Indigenous and community land (LandMark)", "is__landmark_indigenous_and_community_lands")]
 LOWBIT = 1 << len(FLAGS)
+SATBIT = LOWBIT << 1   # set on alerts that come from NASA FIRMS (NOAA-20/21) instead of GFW (Suomi NPP)
 
 
 def gh_output(k, v):
@@ -69,8 +71,25 @@ def season_points(start, end):
                                          f"AND alert__date >= '{a}' AND alert__date <= '{b}'"))
     with ThreadPoolExecutor(5) as ex:
         frames = [f for f in ex.map(job, list(chunks(start, end, 7))) if len(f)]
-    P = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols.replace(" ", "").split(","))
+    P = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=[c.strip() for c in cols.split(",")])
+    P["satellite"] = "N"
     return P.drop_duplicates(subset=["latitude", "longitude", "alert__date", "alert__time_utc"]).reset_index(drop=True)
+
+
+def firms_plan(gfw_latest):
+    """Decide from which date alerts come from NASA FIRMS instead of GFW.
+
+    FIRMS takes over on config firms.from (2 November 2026, when S-NPP data end), or earlier if the
+    GFW feed has not had new alerts for more than firms.stall_days days."""
+    F = CFG.get("firms") or {}
+    if not F:
+        return None, F
+    today = dt.datetime.now(dt.timezone.utc).date()
+    switch = dt.date.fromisoformat(F.get("from", "2026-11-02"))
+    stalled = (today - gfw_latest).days > F.get("stall_days", 3)
+    if today >= switch or stalled:
+        return min(switch, gfw_latest + dt.timedelta(days=1)), F
+    return None, F
 
 
 def point_flags(P):
@@ -112,9 +131,28 @@ def main():
     for d in ("data", "downloads"):
         os.makedirs(os.path.join(out, d), exist_ok=True)
 
-    latest = dt.date.fromisoformat(query(VIIRS, f"SELECT MAX(alert__date) AS d FROM results WHERE iso = '{CFG['iso3']}'")[0]["d"][:10])
+    gfw_latest = dt.date.fromisoformat(query(VIIRS, f"SELECT MAX(alert__date) AS d FROM results WHERE iso = '{CFG['iso3']}'")[0]["d"][:10])
+    cut, F = firms_plan(gfw_latest)
+    latest = gfw_latest
+    FP = pd.DataFrame(columns=firms.COLS)
+    if F:  # keep collecting FIRMS alerts every run, so the store is complete when it is needed
+        try:
+            s0, _ = season_bounds(gfw_latest)
+            for sat in [F.get("satellite", "N20")] + ([F["backup"]] if F.get("backup") else []):
+                got = firms.update_store(sat, s0, cut if sat == F.get("satellite", "N20") else None)
+                if sat == F.get("satellite", "N20"):
+                    FP = got
+        except Exception as e:
+            if cut:
+                raise
+            log("FIRMS fetch failed (not needed yet):", e)
+    if cut:
+        FP = FP[FP.alert__date >= str(cut)].reset_index(drop=True)
+        if len(FP):
+            latest = max(latest, dt.date.fromisoformat(FP.alert__date.max()))
+        log("FIRMS", F.get("satellite", "N20"), "alerts from", cut, ":", len(FP))
     start, end = season_bounds(latest)
-    log("latest alert", latest, "season", start, "to", end)
+    log("latest alert", latest, "(GFW S-NPP to", gfw_latest, ") season", start, "to", end)
     site_url = os.environ.get("SITE_URL") or CFG.get("site_url") or ""
     if site_url and not a.force:
         try:
@@ -149,11 +187,34 @@ def main():
         json.dump(GS, open(gpath, "w"), indent=0)
     gh_output("geostores_changed", str(new).lower())
 
-    P = season_points(start, end)
+    P = season_points(start, min(end, cut - dt.timedelta(days=1)) if cut else end)
+    if cut and len(FP):
+        FP = FP[(FP.alert__date >= str(start)) & (FP.alert__date <= str(end))]
+        P = pd.concat([P, FP[["latitude", "longitude", "alert__date", "alert__time_utc", "confidence__cat", "satellite"]]], ignore_index=True)
+    is_firms = (P.satellite.values != "N")
+    for _, _, col in FLAGS:  # FIRMS alerts carry no GFW land-class attributes
+        if col not in P:
+            P[col] = None
     P["fl"] = point_flags(P)
-    log("season alerts", len(P))
+    log("season alerts", len(P), "of which FIRMS", int(is_firms.sum()))
     U = assign_units(P, prov, dist, pas, kbas)
+    if is_firms.any():  # protected area and KBA flags from the boundaries, for FIRMS alerts
+        for key, prefix in (("pa", "pa-"), ("kba", "kba-")):
+            bit = [i for i, f in enumerate(FLAGS) if f[0] == key][0]
+            inside = set(U[U.unit.str.startswith(prefix)].i)
+            m = np.array([is_firms[i] and i in inside for i in range(len(P))])
+            P.loc[m, "fl"] = P.loc[m, "fl"] | (1 << bit)
+        P.loc[is_firms, "fl"] = P.loc[is_firms, "fl"] | SATBIT
     cur = daily_by_unit(P, U)
+    fac = F.get("factor") if cut else None
+    if fac == "auto":  # median NOAA-20 / Suomi NPP ratio from pipeline/calibrate.py, if it has been run
+        cp = os.path.join(INP, "calibration.json")
+        fac = json.load(open(cp)).get("median_ratio") if os.path.exists(cp) else None
+    if fac:  # express FIRMS counts as Suomi NPP equivalents, so they compare with earlier years
+        for u in cur:
+            for d, v in cur[u].items():
+                if d >= str(cut):
+                    cur[u][d] = [v[0] / fac, v[1] / fac]
 
     first = CFG["baseline_first_year"]
     months = month_keys(start, end)
@@ -171,12 +232,12 @@ def main():
             sel = s[(s.d >= w0) & (s.d <= w1)] if len(s) else s
             yrs[str(y + span)] = [int(sel.a.sum()) if len(sel) else 0, int(sel.n.sum()) if len(sel) else 0]
         c = cur.get(uid, {})
-        yrs[cur_key] = [sum(v[0] for v in c.values()), sum(v[1] for v in c.values())]
+        yrs[cur_key] = [int(round(sum(v[0] for v in c.values()))), int(round(sum(v[1] for v in c.values())))]
         return yrs
 
     def monthly_for(uid):
         c = cur.get(uid, {})
-        return {m: [sum(v[0] for d, v in c.items() if d.startswith(m)), sum(v[1] for d, v in c.items() if d.startswith(m))] for m in months}
+        return {m: [int(round(sum(v[0] for d, v in c.items() if d.startswith(m)))), int(round(sum(v[1] for d, v in c.items() if d.startswith(m))))] for m in months}
 
     def summarise(uid):
         yrs = years_for(uid)
@@ -189,9 +250,15 @@ def main():
                 "y2015": yrs.get("2015", [0, 0])}
 
     def flag_counts(idx):
+        # land-class shares use Suomi NPP alerts only, as FIRMS alerts carry no GFW attributes
+        idx = np.asarray(idx, dtype=int)
+        if is_firms.any() and len(idx):
+            idx = idx[~is_firms[idx]]
         f = P["fl"].values[idx] if len(idx) else np.array([], dtype=int)
         nl = (f & LOWBIT) == 0
-        return {k: [int(((f >> i) & 1).sum()), int((((f >> i) & 1) & nl).sum())] for i, (k, _, _) in enumerate(FLAGS)}
+        out = {k: [int(((f >> i) & 1).sum()), int((((f >> i) & 1) & nl).sum())] for i, (k, _, _) in enumerate(FLAGS)}
+        out["_base"] = [int(len(f)), int(nl.sum())]  # alerts the shares are taken from
+        return out
 
     members = U.groupby("unit").i.apply(np.array).to_dict()
     national = {"id": "national", "name": CFG.get("country_name", "Papua New Guinea"), **summarise("national"),
@@ -231,7 +298,12 @@ def main():
     D = os.path.join(out, "data")
     season = {"start": str(start), "end": str(end), "months": months, "first_year": first, "current": cur_key,
               "label": f"{start.day} {start:%b}–{end.day} {end:%b %Y}" if start.year == end.year else f"{start.day} {start:%b %Y}–{end.day} {end:%b %Y}",
-              "updated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+              "updated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+              "sources": [{"satellite": "Suomi NPP", "via": "Global Forest Watch", "from": str(start), "to": str(min(end, cut - dt.timedelta(days=1)) if cut else end)}]}
+    if cut and (P.satellite != "N").any():
+        season["sources"].append({"satellite": firms.SATS[F.get("satellite", "N20")][4], "via": "NASA FIRMS", "from": str(max(cut, start)), "to": str(end),
+                                  "factor": fac, "reason": "stalled" if (dt.datetime.now(dt.timezone.utc).date() - gfw_latest).days > F.get("stall_days", 3) else "scheduled", "alerts": int(is_firms.sum())})
+        season["flags_basis"] = f"Suomi NPP alerts to {cut - dt.timedelta(days=1)}"
     cfg_pub = {k: CFG.get(k) for k in ("title", "subtitle", "credit", "ring_km", "map_bounds", "programmes")}
     cfg_pub["flags"] = [{"key": k, "label": l} for k, l, _ in FLAGS]
     json.dump({"season": season, "config": cfg_pub, "national": national, "provinces": prov_rows, "districts": dist_rows, "areas": area_rows},
@@ -242,7 +314,7 @@ def main():
     days = (pd.to_datetime(P.alert__date.str[:10]) - d0).dt.days.values
     rows = [[round(float(x), 4), round(float(y), 4), int(d), int(f), int(pmap.get(i, -1))]
             for i, (x, y, d, f) in enumerate(zip(P.longitude, P.latitude, days, P["fl"]))]
-    json.dump({"start": str(start), "fields": ["lon", "lat", "day", "flags", "province"], "low_bit": LOWBIT, "rows": rows},
+    json.dump({"start": str(start), "fields": ["lon", "lat", "day", "flags", "province"], "low_bit": LOWBIT, "sat_bit": SATBIT, "rows": rows},
               open(os.path.join(D, "fires.json"), "w"), separators=(",", ":"))
 
     def save_geo(g, name, tol, nd=4):
