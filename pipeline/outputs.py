@@ -185,7 +185,7 @@ def province_outputs(c, pr):
                    ("Versus 2015 El Niño", f"{100 * pr['now'][0] / pr['y2015'][0]:.0f}%" if pr["y2015"][0] else "–", f"2015: {pr['y2015'][0]:,}"),
                    ("Busiest month", mlabel(bm, c.season, True) if bm else "–", f"{pr['monthly'][bm][0]:,} alerts" if bm else "")])
         ax = fig.add_axes([0.05, 0.29, 0.9, 0.5]); province_map(c, ax, pid)
-        f = pr["flags"]; tot = max(1, pr["now"][0])
+        f = pr["flags"]; tot = max(1, f.get("_base", pr["now"])[0])
         lines = [f"{lab}: {f[k][0]:,} ({100 * f[k][0] / tot:.0f}%)" for k, lab in [(x["key"], x["label"]) for x in c.st["config"]["flags"]] if f[k][0]]
         fig.text(0.05, 0.265, "Where the alerts fall", fontsize=10, fontweight="bold", color=INK)
         fig.text(0.05, 0.25, textwrap.fill(" · ".join(lines) or "No alerts this season.", 125), fontsize=7.6, va="top", color=INK, linespacing=1.5)
@@ -223,7 +223,7 @@ def summary_report(c):
                    ("Versus average\nof earlier years", rtxt(N), f"2015 El Niño: {N['y2015'][0]:,}"),
                    ("Provinces above\naverage", f"{sum(1 for p in provs if p['now'][0] > p['mean'][0])} of {len(provs)}", ""),
                    ("Protected areas and\nKBAs above average", f"{len(above)} of {len(areas)}", f"{len(rec)} at a record")])
-        f = N["flags"]; tot = max(1, N["now"][0])
+        f = N["flags"]; tot = max(1, f.get("_base", N["now"])[0])
         pts = [f"Most alerts: " + ", ".join(f"{p['name'].replace(' Province', '')} ({p['now'][0]:,})" for p in provs[:4]) + "."]
         pts.append(f"{100 * f['tcd30'][0] / tot:.0f}% of alerts are in areas with over 30% tree cover in 2000, {100 * f['primary'][0] / tot:.0f}% in primary forest and "
                    f"{100 * f['ifl'][0] / tot:.0f}% in intact forest landscapes.")
