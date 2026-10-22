@@ -8,8 +8,5 @@
   "ring_km": 5,
   "map_bounds": [[-11.8, 140.8], [-1.0, 156.1]],
   "site_url": "",
-  "programmes": [
-    {"id": "gef7", "name": "GEF7", "description": "CEPA–FAO GEF7 provinces", "provinces": ["PG09", "PG11"]},
-    {"id": "gef8", "name": "GEF8", "description": "CEPA–FAO GEF8 provinces", "provinces": ["PG01", "PG02"]}
-  ]
+  "programmes": []
 }
